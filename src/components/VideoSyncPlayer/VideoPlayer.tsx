@@ -1,9 +1,9 @@
 import React, { useCallback, useRef, useState } from "react";
-import ReactPlayer from "react-player/youtube";
 
 import { OnProgressProps } from "react-player/base";
 import { Button, Slider } from "@/components/ui";
 import { PauseIcon, PlayIcon, VolumeIcon, VolumeXIcon } from "@/assets";
+import ReactPlayer from "react-player";
 
 interface VideoSyncPlayerProps {
   videoSrc: string;
@@ -17,6 +17,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
   const [isPlay, setIsPlay] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [seeking, setSeeking] = useState(false);
+  const [buffering, setBuffering] = useState(false);
   const [progress, setProgress] = useState<OnProgressProps>({
     played: 0,
     playedSeconds: 0,
@@ -25,49 +26,48 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
   });
 
   const videoPlayerRef = useRef<ReactPlayer>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement>(null);
+  const audioPlayerRef = useRef<ReactPlayer>(null);
 
   const syncAudioWithVideo = useCallback(() => {
     if (audioPlayerRef.current && videoPlayerRef.current) {
       const diff = Math.abs(
-        audioPlayerRef.current.currentTime -
-          videoPlayerRef.current?.getCurrentTime()
+        audioPlayerRef.current.getCurrentTime() -
+          videoPlayerRef.current.getCurrentTime()
       );
       if (diff > 0.3) {
-        audioPlayerRef.current.currentTime =
-          videoPlayerRef.current?.getCurrentTime();
+        audioPlayerRef.current.seekTo(videoPlayerRef.current.getCurrentTime());
       }
     }
   }, [audioPlayerRef.current, videoPlayerRef.current]);
 
   const handlePause = () => {
+    if (seeking) return;
     setIsPlay(false);
-    audioPlayerRef?.current?.pause();
     syncAudioWithVideo();
   };
 
   const handlePlay = () => {
     setIsPlay(true);
-    audioPlayerRef?.current?.play();
     syncAudioWithVideo();
-  };
-
-  const handleBuffer = () => {
-    audioPlayerRef?.current?.pause();
-  };
-
-  const handleBufferEnd = () => {
-    audioPlayerRef?.current?.play();
   };
 
   const handleProgress = (state: OnProgressProps) => {
     if (seeking) return;
+    setBuffering(true);
     setProgress(state);
     syncAudioWithVideo();
   };
 
   const handleToggleMuted = () => {
-    setIsMuted(!isMuted);
+    setIsMuted((prev) => !prev);
+  };
+
+  const handleBuffer = () => {
+    setBuffering(true);
+  };
+
+  const handleBufferEnd = () => {
+    setBuffering(false);
   };
 
   return (
@@ -76,15 +76,22 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
         ref={videoPlayerRef}
         url={videoSrc}
         controls
-        playing={isPlay}
-        value={progress.played}
+        muted
+        playing={!seeking && !buffering && isPlay}
         onProgress={handleProgress}
         onPlay={handlePlay}
         onPause={handlePause}
         onBuffer={handleBuffer}
         onBufferEnd={handleBufferEnd}
       />
-      <audio muted={isMuted} ref={audioPlayerRef} src={audioSrc} />
+      <ReactPlayer
+        width={0}
+        height={0}
+        muted={isMuted}
+        ref={audioPlayerRef}
+        url={audioSrc}
+        playing={!seeking && !buffering && isPlay}
+      />
       <div>
         <div className="shadow-md bg-white dark:bg-zinc-800 rounded-lg p-4 flex items-center space-x-4">
           <Button
@@ -101,12 +108,8 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
           </Button>
           <div className="flex-grow relative h-2 bg-zinc-200 rounded-full">
             <Slider
-              onPointerDown={() => {
-                setSeeking(true);
-              }}
-              onPointerUp={() => {
-                setSeeking(false);
-              }}
+              onPointerDown={() => setSeeking(true)}
+              onPointerUp={() => setSeeking(false)}
               onValueChange={([value]) => {
                 setProgress((progress) => ({
                   ...progress,
@@ -114,9 +117,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
                 }));
               }}
               onValueCommit={([value]) => {
-                if (videoPlayerRef.current) {
-                  videoPlayerRef.current.seekTo(value / 100);
-                }
+                videoPlayerRef.current?.seekTo(value / 100);
               }}
               value={[progress.played * 100]}
               max={100}
