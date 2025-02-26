@@ -16,8 +16,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
 }) => {
   const [isPlay, setIsPlay] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [seeking, setSeeking] = useState(false);
-  const [buffering, setBuffering] = useState(false);
+  const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<OnProgressProps>({
     played: 0,
     playedSeconds: 0,
@@ -29,19 +28,28 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
   const audioPlayerRef = useRef<ReactPlayer>(null);
 
   const syncAudioWithVideo = useCallback(() => {
-    if (audioPlayerRef.current && videoPlayerRef.current) {
-      const diff = Math.abs(
-        audioPlayerRef.current.getCurrentTime() -
-          videoPlayerRef.current.getCurrentTime()
-      );
-      if (diff > 0.3) {
-        audioPlayerRef.current.seekTo(videoPlayerRef.current.getCurrentTime());
-      }
+    if (!audioPlayerRef.current || !videoPlayerRef.current) return;
+    const diff = Math.abs(
+      audioPlayerRef.current.getCurrentTime() -
+        videoPlayerRef.current.getCurrentTime()
+    );
+    if (diff > 0.3) {
+      audioPlayerRef.current.seekTo(videoPlayerRef.current.getCurrentTime());
     }
+
+    const playerState = videoPlayerRef.current
+      ?.getInternalPlayer()
+      ?.getPlayerState();
+
+    setPending((prev) => {
+      if (playerState !== 1 && !prev) return true;
+      if (playerState === 1 && prev) return false;
+      return prev;
+    });
   }, [audioPlayerRef.current, videoPlayerRef.current]);
 
   const handlePause = () => {
-    if (seeking) return;
+    if (pending) return;
     setIsPlay(false);
     syncAudioWithVideo();
   };
@@ -52,8 +60,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
   };
 
   const handleProgress = (state: OnProgressProps) => {
-    if (seeking) return;
-    setBuffering(true);
+    if (pending) return;
     setProgress(state);
     syncAudioWithVideo();
   };
@@ -63,11 +70,11 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
   };
 
   const handleBuffer = () => {
-    setBuffering(true);
+    setPending(true);
   };
 
   const handleBufferEnd = () => {
-    setBuffering(false);
+    setPending(false);
   };
 
   return (
@@ -77,7 +84,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
         url={videoSrc}
         controls
         muted
-        playing={!seeking && !buffering && isPlay}
+        playing={!pending && isPlay}
         onProgress={handleProgress}
         onPlay={handlePlay}
         onPause={handlePause}
@@ -90,7 +97,7 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
         muted={isMuted}
         ref={audioPlayerRef}
         url={audioSrc}
-        playing={!seeking && !buffering && isPlay}
+        playing={!pending && isPlay}
       />
       <div>
         <div className="shadow-md bg-white dark:bg-zinc-800 rounded-lg p-4 flex items-center space-x-4">
@@ -108,8 +115,8 @@ const VideoPlayer: React.FC<VideoSyncPlayerProps> = ({
           </Button>
           <div className="flex-grow relative h-2 bg-zinc-200 rounded-full">
             <Slider
-              onPointerDown={() => setSeeking(true)}
-              onPointerUp={() => setSeeking(false)}
+              onPointerDown={() => setPending(true)}
+              onPointerUp={() => setPending(false)}
               onValueChange={([value]) => {
                 setProgress((progress) => ({
                   ...progress,
